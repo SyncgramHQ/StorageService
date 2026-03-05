@@ -2,6 +2,8 @@ import os
 import re
 import uuid
 import boto3
+import logging
+from datetime import datetime
 from dotenv import load_dotenv
 from botocore.exceptions import BotoCoreError, ClientError
 from flask import Flask, request, jsonify, redirect
@@ -10,6 +12,24 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 load_dotenv()
+
+# Configure logging
+log_dir = 'logs'
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+log_filename = os.path.join(log_dir, f'storage_service_{datetime.now().strftime("%Y%m%d")}.log')
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filename),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
@@ -37,6 +57,7 @@ def get_s3_config():
     bucket_name = os.environ.get('S3_BUCKET_NAME')
 
     if not all([aws_access_key_id, aws_secret_access_key, aws_region, bucket_name]):
+        logger.warning('S3 configuration incomplete. Missing required environment variables.')
         return None
 
     return {
@@ -101,6 +122,7 @@ def allowed_file(filename):
 
 @app.route('/')
 def index():
+    logger.info('Index endpoint accessed')
     return jsonify({
         'message': 'Image & file hosting service is running',
         'api': '/api',
@@ -117,6 +139,7 @@ def index():
 @app.route('/api')
 def api_info():
     """API discovery and documentation for external clients."""
+    logger.info('API info endpoint accessed from %s', request.remote_addr)
     base = request.host_url.rstrip('/')
     return jsonify({
         'name': 'Image & File Hosting API',
@@ -174,32 +197,44 @@ def api_info():
 
 @app.errorhandler(RequestEntityTooLarge)
 def handle_file_too_large(_error):
+    logger.warning('File too large error from %s', request.remote_addr)
     return jsonify({'error': 'File too large. Maximum size is 50MB'}), 413
 
 
 @app.route('/api/upload', methods=['POST'])
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    client_ip = request.remote_addr
+    
     if 'file' not in request.files:
+        logger.warning('Upload request from %s missing file field', client_ip)
         return jsonify({'error': 'No file provided'}), 400
 
     file = request.files['file']
 
     if file.filename == '':
+        logger.warning('Upload request from %s with empty filename', client_ip)
         return jsonify({'error': 'No file selected'}), 400
 
     if not allowed_file(file.filename):
+        logger.warning('Upload request from %s rejected - file type not allowed: %s', client_ip, file.filename)
         return jsonify({'error': 'File type not allowed'}), 400
 
     config = get_s3_config()
     s3_client = get_s3_client()
     if not config or not s3_client:
+        logger.error('Upload from %s failed - S3 configuration missing', client_ip)
         return jsonify({'error': 'S3 configuration is missing'}), 500
 
     # Generate unique filename
     ext = secure_filename(file.filename).rsplit('.', 1)[1].lower()
     unique_filename = f"{uuid.uuid4()}.{ext}"
     object_key = s3_object_key(unique_filename)
+    file_size = len(file.read()) if hasattr(file, 'read') else 0
+    file.seek(0)
+
+    logger.info('Upload started from %s - Original filename: %s, Generated: %s, Size: %d bytes, Type: %s',
+                client_ip, file.filename, unique_filename, file_size, file.content_type or 'unknown')
 
     try:
         file.stream.seek(0)
@@ -209,7 +244,9 @@ def upload_file():
             Key=object_key,
             ExtraArgs={'ContentType': file.content_type or 'application/octet-stream'},
         )
-    except (BotoCoreError, ClientError):
+        logger.info('Upload completed successfully - Filename: %s, to S3 key: %s', unique_filename, object_key)
+    except (BotoCoreError, ClientError) as e:
+        logger.error('S3 upload failed for %s from %s: %s', unique_filename, client_ip, str(e))
         return jsonify({'error': 'Failed to upload file to S3'}), 502
 
     base_url = request.host_url.rstrip('/')
@@ -225,19 +262,27 @@ def upload_file():
 @app.route('/files/<filename>')
 def serve_file(filename):
     """Redirect to a temporary signed URL for any uploaded file."""
+    client_ip = request.remote_addr
+    logger.info('File access request from %s - filename: %s', client_ip, filename)
+    
     signed_url, error = generate_presigned_url(filename)
     if error == 'Invalid filename':
+        logger.warning('Invalid filename requested from %s: %s', client_ip, filename)
         return jsonify({'error': 'Invalid filename'}), 400
     if error:
+        logger.error('Failed to generate presigned URL for %s from %s: %s', filename, client_ip, error)
         return jsonify({'error': error}), 500
 
+    logger.info('Presigned URL generated and redirecting for filename: %s', filename)
     return redirect(signed_url, code=302)
 
 @app.route('/images/<filename>')
 def serve_image_redirect(filename):
     """Redirect old /images/ URLs to /files/ for backward compatibility."""
+    logger.info('Legacy /images/ endpoint accessed from %s - filename: %s', request.remote_addr, filename)
     return redirect(f"/files/{filename}", code=302)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
+    logger.info('Starting Image & File Hosting Service on port %d', port)
     app.run(host='0.0.0.0', port=port, debug=False)
