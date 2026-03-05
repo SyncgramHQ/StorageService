@@ -1,112 +1,132 @@
-import { useState } from 'react'
-import './App.css'
+import { useState } from "react";
+import "./App.css";
 
-const API_URL = 'https://imageserversyncgram.up.railway.app'
+const API_URL = (
+  import.meta.env.VITE_API_URL || "https://imageserversyncgram.up.railway.app"
+).replace(/\/$/, "");
+
+const isPdfFilename = (filename) => filename?.toLowerCase().endsWith(".pdf");
 
 function App() {
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [uploading, setUploading] = useState(false)
-  const [uploadedUrl, setUploadedUrl] = useState('')
-  const [error, setError] = useState('')
-  const [copied, setCopied] = useState(false)
-  const [isDragging, setIsDragging] = useState(false)
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [accessUrl, setAccessUrl] = useState("");
+  const [endpointUrl, setEndpointUrl] = useState("");
+  const [uploadedFilename, setUploadedFilename] = useState("");
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleFileSelect = (e) => {
-    const file = e.target.files[0]
+    const file = e.target.files[0];
     if (file) {
-      setSelectedFile(file)
-      setError('')
-      setUploadedUrl('')
+      setSelectedFile(file);
+      setError("");
+      setAccessUrl("");
+      setEndpointUrl("");
+      setUploadedFilename("");
     }
-  }
+  };
 
   const handleDragOver = (e) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
+    e.preventDefault();
+    setIsDragging(true);
+  };
 
   const handleDragLeave = (e) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }
+    e.preventDefault();
+    setIsDragging(false);
+  };
 
   const isAllowedFile = (file) =>
-    file && (file.type.startsWith('image/') || file.type === 'application/pdf')
+    file && (file.type.startsWith("image/") || file.type === "application/pdf");
 
   const handleDrop = (e) => {
-    e.preventDefault()
-    setIsDragging(false)
+    e.preventDefault();
+    setIsDragging(false);
 
-    const file = e.dataTransfer.files[0]
+    const file = e.dataTransfer.files[0];
     if (isAllowedFile(file)) {
-      setSelectedFile(file)
-      setError('')
-      setUploadedUrl('')
+      setSelectedFile(file);
+      setError("");
+      setAccessUrl("");
+      setEndpointUrl("");
+      setUploadedFilename("");
 
       // Update the file input to sync with drag & drop
-      const fileInput = document.getElementById('fileInput')
-      const dataTransfer = new DataTransfer()
-      dataTransfer.items.add(file)
-      fileInput.files = dataTransfer.files
+      const fileInput = document.getElementById("fileInput");
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      fileInput.files = dataTransfer.files;
     } else {
-      setError('Please drop an image or PDF file')
+      setError("Please drop an image or PDF file");
     }
-  }
+  };
 
   const handleUpload = async (e) => {
-    e.preventDefault()
-    if (!selectedFile) return
+    e.preventDefault();
+    if (!selectedFile) return;
 
-    setUploading(true)
-    setError('')
+    setUploading(true);
+    setError("");
 
-    const formData = new FormData()
-    formData.append('file', selectedFile)
+    const formData = new FormData();
+    formData.append("file", selectedFile);
 
     try {
       const response = await fetch(`${API_URL}/upload`, {
-        method: 'POST',
-        body: formData
-      })
+        method: "POST",
+        body: formData,
+      });
 
-      const data = await response.json()
+      const data = await response.json();
 
-      if (response.ok && data.success) {
-        setUploadedUrl(data.url)
+      if (response.ok && data.success && data.filename) {
+        const resolvedEndpointUrl =
+          data.url || `${API_URL}/files/${encodeURIComponent(data.filename)}`;
+        setUploadedFilename(data.filename);
+        setEndpointUrl(resolvedEndpointUrl);
+        setAccessUrl(resolvedEndpointUrl);
       } else {
-        setError(data.error || 'Upload failed')
+        setError(data.error || "Upload failed");
       }
     } catch (err) {
-      setError(err.message || 'An error occurred during upload')
+      setError(err.message || "An error occurred during upload");
     } finally {
-      setUploading(false)
+      setUploading(false);
     }
-  }
+  };
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(uploadedUrl)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      await navigator.clipboard.writeText(accessUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      alert('Failed to copy URL')
+      alert("Failed to copy URL");
     }
-  }
+  };
 
   const handleUploadAnother = () => {
-    setSelectedFile(null)
-    setUploadedUrl('')
-    setError('')
-    document.getElementById('fileInput').value = ''
-  }
+    setSelectedFile(null);
+    setAccessUrl("");
+    setEndpointUrl("");
+    setUploadedFilename("");
+    setError("");
+    document.getElementById("fileInput").value = "";
+  };
+
+  const isPdf = isPdfFilename(uploadedFilename || selectedFile?.name);
 
   return (
     <div className="container">
       <h1>Image & File Hosting</h1>
-      <p className="subtitle">Upload images or PDFs and get a shareable URL</p>
+      <p className="subtitle">
+        Upload images or PDFs and get a temporary 10-minute access URL
+      </p>
 
       <div className="upload-section">
-        {!uploadedUrl ? (
+        {!uploadedFilename ? (
           <>
             <form onSubmit={handleUpload}>
               <div
@@ -124,7 +144,7 @@ function App() {
                 />
                 <label
                   htmlFor="fileInput"
-                  className={`${selectedFile ? 'file-selected' : ''} ${isDragging ? 'dragging' : ''}`}
+                  className={`${selectedFile ? "file-selected" : ""} ${isDragging ? "dragging" : ""}`}
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -143,18 +163,15 @@ function App() {
                   </svg>
                   <span>
                     {isDragging
-                      ? 'Drop image or PDF here'
+                      ? "Drop image or PDF here"
                       : selectedFile
                         ? selectedFile.name
-                        : 'Click or drag & drop an image or PDF'}
+                        : "Click or drag & drop an image or PDF"}
                   </span>
                 </label>
               </div>
-              <button
-                type="submit"
-                disabled={!selectedFile || uploading}
-              >
-                {uploading ? 'Uploading...' : 'Upload'}
+              <button type="submit" disabled={!selectedFile || uploading}>
+                {uploading ? "Uploading..." : "Upload"}
               </button>
             </form>
 
@@ -178,25 +195,41 @@ function App() {
             <div className="url-box">
               <input
                 type="text"
-                value={uploadedUrl}
+                value={accessUrl}
                 readOnly
+                placeholder="No access URL available"
               />
               <button
                 onClick={handleCopy}
-                className={copied ? 'copied' : ''}
+                className={copied ? "copied" : ""}
+                disabled={!accessUrl}
               >
-                {copied ? 'Copied!' : 'Copy'}
+                {copied ? "Copied!" : "Copy"}
               </button>
             </div>
-            {uploadedUrl.endsWith('.pdf') ? (
+
+            <div className="endpoint-note">
+              <p>API file endpoint:</p>
+              <code>{endpointUrl}</code>
+            </div>
+
+            {isPdf ? (
               <div className="preview preview-pdf">
-                <a href={uploadedUrl} target="_blank" rel="noopener noreferrer">
-                  Open PDF
-                </a>
+                {accessUrl ? (
+                  <a href={accessUrl} target="_blank" rel="noopener noreferrer">
+                    Open PDF
+                  </a>
+                ) : (
+                  <p>Temporary URL unavailable.</p>
+                )}
               </div>
             ) : (
               <div className="preview">
-                <img src={uploadedUrl} alt="Uploaded" />
+                {accessUrl ? (
+                  <img src={accessUrl} alt="Uploaded" />
+                ) : (
+                  <p>Temporary URL unavailable.</p>
+                )}
               </div>
             )}
             <button onClick={handleUploadAnother} className="upload-another">
@@ -206,7 +239,7 @@ function App() {
         )}
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

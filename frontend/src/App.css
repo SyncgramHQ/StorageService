@@ -91,7 +91,9 @@ button[type="submit"],
   font-size: 18px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.2s ease, opacity 0.3s ease;
+  transition:
+    transform 0.2s ease,
+    opacity 0.3s ease;
 }
 
 button[type="submit"]:hover:not(:disabled),
@@ -121,8 +123,12 @@ button[type="submit"]:disabled {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .result {
@@ -180,6 +186,54 @@ button[type="submit"]:disabled {
 
 .url-box button.copied {
   background: #48bb78;
+}
+
+.url-box button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.endpoint-note {
+  margin-bottom: 16px;
+  text-align: left;
+  background: #f8f9ff;
+  border: 1px solid #dbe2ff;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.endpoint-note p {
+  margin-bottom: 6px;
+  color: #4a5568;
+  font-size: 13px;
+}
+
+.endpoint-note code {
+  display: block;
+  word-break: break-all;
+  color: #2d3748;
+  font-size: 12px;
+}
+
+.refresh-url {
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #667eea;
+  background: #edf2ff;
+  color: #3f51c6;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.refresh-url:hover:not(:disabled) {
+  background: #dfe7ff;
+}
+
+.refresh-url:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .preview {
