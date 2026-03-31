@@ -1,14 +1,14 @@
 # Image & File Hosting Service
 
-A simple, lossless image and file hosting service with a Flask backend and React frontend. Exposeable REST API for uploads and retrieval.
+A simple, lossless file hosting service with a Flask backend and React frontend. Exposeable REST API for uploads and retrieval.
 
 ## Features
-- Upload images or PDFs and get shareable URLs
+- Upload any file type and get shareable URLs
 - Lossless storage (original quality preserved)
 - No authentication required
 - Public access for all files
 - **Exposeable API**: `GET /api` for discovery, `POST /api/upload` for uploads
-- Support for PNG, JPG, JPEG, GIF, WebP, SVG, BMP, ICO, and **PDF**
+- Support for all file formats (including video, audio, documents, images, and archives)
 - Max file size: 50MB
 
 ## Project Structure
@@ -59,7 +59,7 @@ See [RAILWAY_DEPLOY.md](RAILWAY_DEPLOY.md) for detailed instructions.
 See [VERCEL_DEPLOY.md](VERCEL_DEPLOY.md) for detailed instructions.
 
 ## How It Works
-1. User uploads an image or PDF via the frontend (or any client via the API)
+1. User uploads any file via the frontend (or any client via the API)
 2. Client sends the file to `POST /upload` or `POST /api/upload`
 3. Backend saves the file with a unique UUID filename
 4. Backend returns a public URL
@@ -82,12 +82,12 @@ API discovery: returns endpoints, allowed types, and usage.
     "upload": { "method": "POST", "path": "/api/upload", ... },
     "get_file": { "method": "GET", "path": "/files/<filename>", ... }
   },
-  "allowed_types": ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "pdf"]
+  "allowed_types": ["*"]
 }
 ```
 
 ### `POST /api/upload` or `POST /upload`
-Upload an image or PDF.
+Upload any file type.
 
 **Request**: `multipart/form-data` with `file` field (max 50MB)
 
@@ -101,7 +101,7 @@ Upload an image or PDF.
 ```
 
 ### `GET /files/<filename>`
-Retrieve an uploaded file (image or PDF).
+Retrieve any uploaded file.
 
 **Response**: File with appropriate `Content-Type`
 
@@ -115,7 +115,7 @@ Redirects to `/files/<filename>`. Kept so old shared links still work.
 - `UPLOAD_FOLDER` - Directory to store uploads (set to `/app/uploads` on Railway)
 
 ## Notes
-- Images and PDFs are stored with no conversion (lossless/original)
+- Files are stored with no conversion (lossless/original)
 - Files are renamed with UUID to prevent conflicts
 - CORS is enabled for all origins
 - Railway volumes ensure persistent storage across deployments

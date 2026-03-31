@@ -36,11 +36,6 @@ CORS(app)
 
 # Configuration
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
-ALLOWED_EXTENSIONS = {
-    'png', 'jpg', 'jpeg', 'jfif', 'pjpeg', 'pjp',
-    'gif', 'webp', 'avif', 'svg', 'bmp', 'ico',
-    'tif', 'tiff', 'heic', 'heif', 'pdf'
-}
 SIGNED_URL_EXPIRATION = 600  # 10 minutes
 
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
@@ -84,11 +79,7 @@ def get_s3_client():
 def is_valid_storage_filename(filename):
     if not filename or '/' in filename or '\\' in filename:
         return False
-    if not UUID_FILENAME_PATTERN.match(filename):
-        return False
-
-    ext = filename.rsplit('.', 1)[1].lower()
-    return ext in ALLOWED_EXTENSIONS
+    return bool(UUID_FILENAME_PATTERN.match(filename))
 
 
 def s3_object_key(filename):
@@ -117,8 +108,21 @@ def generate_presigned_url(filename):
     except (BotoCoreError, ClientError):
         return None, 'Failed to generate signed URL'
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+def build_storage_filename(original_filename):
+    safe_name = secure_filename(original_filename or '')
+    ext = ''
+    if '.' in safe_name:
+        ext = safe_name.rsplit('.', 1)[1].lower()
+
+    if not ext:
+        ext = 'bin'
+
+    # Keep extension URL-safe and stable for generated UUID filenames.
+    ext = re.sub(r'[^a-z0-9]', '', ext)
+    if not ext:
+        ext = 'bin'
+
+    return f"{uuid.uuid4()}.{ext}"
 
 @app.route('/')
 def index():
@@ -154,7 +158,7 @@ def api_info():
         },
         'limits': {
             'max_file_size_mb': 50,
-            'allowed_types': sorted(ALLOWED_EXTENSIONS),
+            'allowed_types': ['*'],
         },
         'required_env_vars': [
             'AWS_ACCESS_KEY_ID',
@@ -166,7 +170,7 @@ def api_info():
             'upload_api': {
                 'method': 'POST',
                 'path': '/api/upload',
-                'description': 'Upload an image (PNG, JPG, JPEG, JFIF, PJPEG, PJP, GIF, WebP, AVIF, SVG, BMP, ICO, TIF, TIFF, HEIC, HEIF) or PDF',
+                'description': 'Upload any file type (video, audio, documents, images, archives, etc.) up to 50MB',
                 'request': 'multipart/form-data with field "file"',
                 'response': {
                     'success': True,
@@ -216,19 +220,14 @@ def upload_file():
         logger.warning('Upload request from %s with empty filename', client_ip)
         return jsonify({'error': 'No file selected'}), 400
 
-    if not allowed_file(file.filename):
-        logger.warning('Upload request from %s rejected - file type not allowed: %s', client_ip, file.filename)
-        return jsonify({'error': 'File type not allowed'}), 400
-
     config = get_s3_config()
     s3_client = get_s3_client()
     if not config or not s3_client:
         logger.error('Upload from %s failed - S3 configuration missing', client_ip)
         return jsonify({'error': 'S3 configuration is missing'}), 500
 
-    # Generate unique filename
-    ext = secure_filename(file.filename).rsplit('.', 1)[1].lower()
-    unique_filename = f"{uuid.uuid4()}.{ext}"
+    # Generate unique UUID filename while preserving a safe extension when present.
+    unique_filename = build_storage_filename(file.filename)
     object_key = s3_object_key(unique_filename)
     file_size = len(file.read()) if hasattr(file, 'read') else 0
     file.seek(0)

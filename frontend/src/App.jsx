@@ -6,6 +6,7 @@ const API_URL = (
 ).replace(/\/$/, "");
 
 const isPdfFilename = (filename) => filename?.toLowerCase().endsWith(".pdf");
+const isImageFile = (file) => file?.type?.startsWith("image/");
 
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -38,15 +39,12 @@ function App() {
     setIsDragging(false);
   };
 
-  const isAllowedFile = (file) =>
-    file && (file.type.startsWith("image/") || file.type === "application/pdf");
-
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
 
     const file = e.dataTransfer.files[0];
-    if (isAllowedFile(file)) {
+    if (file) {
       setSelectedFile(file);
       setError("");
       setAccessUrl("");
@@ -59,7 +57,7 @@ function App() {
       dataTransfer.items.add(file);
       fileInput.files = dataTransfer.files;
     } else {
-      setError("Please drop an image or PDF file");
+      setError("Please drop a file");
     }
   };
 
@@ -122,7 +120,7 @@ function App() {
     <div className="container">
       <h1>Image & File Hosting</h1>
       <p className="subtitle">
-        Upload images or PDFs and get a temporary 10-minute access URL
+        Upload any file and get a temporary 10-minute access URL
       </p>
 
       <div className="upload-section">
@@ -138,7 +136,6 @@ function App() {
                 <input
                   type="file"
                   id="fileInput"
-                  accept="image/*,.pdf,application/pdf"
                   onChange={handleFileSelect}
                   required
                 />
@@ -163,10 +160,10 @@ function App() {
                   </svg>
                   <span>
                     {isDragging
-                      ? "Drop image or PDF here"
+                      ? "Drop file here"
                       : selectedFile
                         ? selectedFile.name
-                        : "Click or drag & drop an image or PDF"}
+                        : "Click or drag & drop a file"}
                   </span>
                 </label>
               </div>
@@ -223,10 +220,20 @@ function App() {
                   <p>Temporary URL unavailable.</p>
                 )}
               </div>
-            ) : (
+            ) : isImageFile(selectedFile) ? (
               <div className="preview">
                 {accessUrl ? (
                   <img src={accessUrl} alt="Uploaded" />
+                ) : (
+                  <p>Temporary URL unavailable.</p>
+                )}
+              </div>
+            ) : (
+              <div className="preview preview-pdf">
+                {accessUrl ? (
+                  <a href={accessUrl} target="_blank" rel="noopener noreferrer">
+                    Open File
+                  </a>
                 ) : (
                   <p>Temporary URL unavailable.</p>
                 )}
