@@ -113,6 +113,7 @@ Redirects to `/files/<filename>`. Kept so old shared links still work.
 ### Backend
 - `PORT` - Port to run the server (automatically set by Railway)
 - `UPLOAD_FOLDER` - Directory to store uploads (set to `/app/uploads` on Railway)
+- `S3_OBJECT_PREFIX` - Optional S3 folder/prefix for new uploads (default: `compliance`). Reads stay backward-compatible with existing `compliance/` objects.
 
 ## Notes
 - Files are stored with no conversion (lossless/original)

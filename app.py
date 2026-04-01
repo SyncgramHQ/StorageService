@@ -38,6 +38,15 @@ CORS(app)
 # Configuration
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 SIGNED_URL_EXPIRATION = 600  # 10 minutes
+S3_OBJECT_PREFIX = os.environ.get('S3_OBJECT_PREFIX', 'compliance').strip().strip('/')
+
+if not S3_OBJECT_PREFIX:
+    S3_OBJECT_PREFIX = 'compliance'
+
+# Keep reads backward-compatible for existing objects under the historical prefix.
+READ_PREFIX_FALLBACKS = [S3_OBJECT_PREFIX]
+if S3_OBJECT_PREFIX != 'compliance':
+    READ_PREFIX_FALLBACKS.append('compliance')
 
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
@@ -85,7 +94,24 @@ def is_valid_storage_filename(filename):
 
 
 def s3_object_key(filename):
-    return f"compliance/{filename}"
+    return f"{S3_OBJECT_PREFIX}/{filename}"
+
+
+def get_candidate_object_keys(filename):
+    return [f"{prefix}/{filename}" for prefix in READ_PREFIX_FALLBACKS]
+
+
+def resolve_existing_object_key(filename, s3_client, bucket_name):
+    for key in get_candidate_object_keys(filename):
+        try:
+            s3_client.head_object(Bucket=bucket_name, Key=key)
+            return key
+        except ClientError as e:
+            error_code = str(e.response.get('Error', {}).get('Code', ''))
+            if error_code in {'404', 'NoSuchKey', 'NotFound'}:
+                continue
+            raise
+    return None
 
 
 def get_file_size(file_obj):
@@ -113,11 +139,15 @@ def generate_presigned_url(filename):
         return None, 'S3 configuration is missing'
 
     try:
+        object_key = resolve_existing_object_key(filename, s3_client, config['bucket_name'])
+        if not object_key:
+            return None, 'File not found'
+
         signed_url = s3_client.generate_presigned_url(
             ClientMethod='get_object',
             Params={
                 'Bucket': config['bucket_name'],
-                'Key': s3_object_key(filename),
+                'Key': object_key,
             },
             ExpiresIn=SIGNED_URL_EXPIRATION,
         )
@@ -169,9 +199,10 @@ def api_info():
         'storage': {
             'provider': 'aws_s3',
             'bucket_visibility': 'private',
-            'path_format': 'compliance/<uuid>.<ext>',
+            'path_format': f'{S3_OBJECT_PREFIX}/<uuid>.<ext>',
             'access_pattern': 'pre-signed URL only',
             'signed_url_ttl_seconds': SIGNED_URL_EXPIRATION,
+            'read_prefix_fallbacks': READ_PREFIX_FALLBACKS,
         },
         'limits': {
             'max_file_size_mb': 50,
@@ -284,6 +315,9 @@ def serve_file(filename):
     if error == 'Invalid filename':
         logger.warning('Invalid filename requested from %s: %s', client_ip, filename)
         return jsonify({'error': 'Invalid filename'}), 400
+    if error == 'File not found':
+        logger.info('File not found for %s: %s', client_ip, filename)
+        return jsonify({'error': 'File not found'}), 404
     if error:
         logger.error('Failed to generate presigned URL for %s from %s: %s', filename, client_ip, error)
         return jsonify({'error': error}), 500
