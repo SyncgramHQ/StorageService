@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+import sys
 import boto3
 import logging
 from datetime import datetime
@@ -25,7 +26,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_filename),
-        logging.StreamHandler()
+        logging.StreamHandler(sys.stdout)
     ]
 )
 
@@ -43,6 +44,7 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 UUID_FILENAME_PATTERN = re.compile(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.[A-Za-z0-9]+$'
 )
+LEGACY_FILENAME_PATTERN = re.compile(r'^[0-9a-fA-F]{32}\.[A-Za-z0-9]+$')
 
 
 def get_s3_config():
@@ -79,11 +81,26 @@ def get_s3_client():
 def is_valid_storage_filename(filename):
     if not filename or '/' in filename or '\\' in filename:
         return False
-    return bool(UUID_FILENAME_PATTERN.match(filename))
+    return bool(UUID_FILENAME_PATTERN.match(filename) or LEGACY_FILENAME_PATTERN.match(filename))
 
 
 def s3_object_key(filename):
     return f"compliance/{filename}"
+
+
+def get_file_size(file_obj):
+    """Best-effort size detection without reading the full upload stream into memory."""
+    stream = getattr(file_obj, 'stream', None)
+    if not stream:
+        return -1
+    try:
+        current = stream.tell()
+        stream.seek(0, os.SEEK_END)
+        size = stream.tell()
+        stream.seek(current)
+        return size
+    except (OSError, AttributeError):
+        return -1
 
 
 def generate_presigned_url(filename):
@@ -229,11 +246,10 @@ def upload_file():
     # Generate unique UUID filename while preserving a safe extension when present.
     unique_filename = build_storage_filename(file.filename)
     object_key = s3_object_key(unique_filename)
-    file_size = len(file.read()) if hasattr(file, 'read') else 0
-    file.seek(0)
+    file_size = get_file_size(file)
 
-    logger.info('Upload started from %s - Original filename: %s, Generated: %s, Size: %d bytes, Type: %s',
-                client_ip, file.filename, unique_filename, file_size, file.content_type or 'unknown')
+    logger.info('Upload started from %s - Original filename: %s, Generated: %s, Size: %s bytes, Type: %s',
+                client_ip, file.filename, unique_filename, file_size if file_size >= 0 else 'unknown', file.content_type or 'unknown')
 
     try:
         file.stream.seek(0)
